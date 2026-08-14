@@ -23,9 +23,13 @@ This example was created based on these [instructions](https://modelcontextproto
 - Clone this repo into a working directory, e.g. **C:\work**
 - Change into the mq-mcp-server directory: **cd mq-mcp-server**
 - Install dependencies: **uv add "mcp[cli]" httpx**
-- Open **mqmcpserver.py** in your editor of choice and change:
-    - URL_BASE to point to the base URL of your mqweb server
-    - USER_NAME and PASSWORD to the username and password of the user you want to run MQSC commands as. Bear in mind that if the user is a member of the MQWebAdmin or MQWebUser roles then requests to the MQ MCP server will be able to change your MQ configuration, so you might only want to use these roles in a test environment
+- Set environment variables for your mqweb credentials (never stored in source code):
+    - (MacOS/Linux): **export MQ_USERNAME=mqreader && export MQ_PASSWORD=mqreader**
+    - (Windows): **set MQ_USERNAME=mqreader** and **set MQ_PASSWORD=mqreader**
+- Open **mqmcpserver.py** in your editor of choice and update the **MQ_SERVERS** list:
+    - Add one entry per mqweb server. For a single server this is just the default `https://localhost:9443/ibmmq/rest/v3/admin/`
+    - For a **uniform cluster with Native HA**, add one entry per node (e.g. ports 9443–9448 for two QMs with three HA nodes each). The `dspmq` tool queries all servers in parallel; `runmqsc` tries each in turn and skips unreachable ones automatically
+    - Bear in mind that if the user is a member of the MQWebAdmin or MQWebUser roles then requests to the MQ MCP server will be able to change your MQ configuration, so you might only want to use these roles in a test environment
 - Save your changes
 - Start the MQ MCP server by running: **uv run mqmcpserver.py**
 
