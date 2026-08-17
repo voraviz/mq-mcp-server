@@ -38,6 +38,57 @@ Some alternatives are included, with comments, in the code.
 
 ## Connecting the MCP server to an LLM
 
-Follow the instructions provided by your LLM for connecting to your new MCP server. For example you could connect to it using [IBM Bob](https://www.ibm.com/products/bob) or [IBM Watsonx Orchestrate](https://www.ibm.com/docs/en/watsonx/watson-orchestrate/base?topic=servers-importing-tools-from-mcp-server). 
+Follow the instructions provided by your LLM for connecting to your new MCP server. For example you could connect to it using [IBM Bob](https://www.ibm.com/products/bob) or [IBM Watsonx Orchestrate](https://www.ibm.com/docs/en/watsonx/watson-orchestrate/base?topic=servers-importing-tools-from-mcp-server).
 Alternatively, a [wide range](https://modelcontextprotocol.io/clients) of other LLMs support MCP.
+
+### Connecting with IBM Bob
+
+1. Start the MQ MCP server (see above). It will listen on `http://127.0.0.1:8000/mcp` by default.
+
+2. Create a `.bob/mcp.json` file in your project root (or edit it via **Bob Settings → MCP → Edit Project MCP**):
+
+```json
+{
+  "mcpServers": {
+    "mqmcpserver": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+3. Bob will automatically discover the `dspmq` and `runmqsc` tools. You can then ask Bob natural-language questions about your MQ environment, for example:
+   - *"List my queue managers"*
+   - *"Show all queues on QM1"*
+   - *"Check the Native HA status of QM1"*
+   - *"Check the uniform cluster balance — how many app connections are on each queue manager?"*
+
+### Transport options
+
+The server supports three transports. Edit the `mcp.run()` call at the bottom of `mqmcpserver.py` to switch:
+
+| Transport | `mcp.run()` call | URL | Notes |
+|---|---|---|---|
+| Streamable HTTP (default) | `mcp.run(transport='streamable-http')` | `http://127.0.0.1:8000/mcp` | Recommended for IBM Bob and modern clients |
+| SSE | `mcp.run(transport='sse')` | `http://127.0.0.1:8000/sse` | For clients that speak Server-Sent Events |
+| stdio | `mcp.run(transport='stdio')` | n/a | Client spawns the process directly |
+
+For **stdio** transport, use this `mcp.json` instead (the MCP client starts the Python process itself):
+
+```json
+{
+  "mcpServers": {
+    "mqmcpserver": {
+      "type": "stdio",
+      "command": "/absolute/path/to/mq-mcp-server/.venv/bin/python",
+      "args": ["/absolute/path/to/mq-mcp-server/mqmcpserver.py"],
+      "env": {
+        "MQ_USERNAME": "mqreader",
+        "MQ_PASSWORD": "mqreader"
+      }
+    }
+  }
+}
+```
 
