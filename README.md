@@ -10,31 +10,77 @@ This repo contains a simple MCP server, written in Python, that exposes a subset
 
 You can use this MCP server with any LLM which has an MCP client in it, for example [IBM Bob](https://www.ibm.com/products/bob), to allow that LLM to interact with, and potentially configure, your queue managers. 
 
+## Prerequisites
+
+Before running the MQ MCP server, ensure you have the following:
+
+| Prerequisite | Details |
+|---|---|
+| **IBM MQ** | A full IBM MQ for distributed installation with one or more queue managers running. The mqweb server (`strmqweb`) must be started. This does not have to be on your local machine. |
+| **mqweb user** | A user configured in the mqweb server with at least the `MQWebUser` role (read-only) or `MQWebAdmin` role (read-write). Note: `MQWebAdmin` allows full MQ configuration changes — use with care in production. |
+| **Python 3.10+** | Install from [python.org](https://www.python.org/downloads/) or via your OS package manager. |
+| **uv** | Python package manager used to run the server. |
+
+Install `uv`:
+- (macOS/Linux): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- (Windows): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
 ## Getting the MQ MCP server running
 
 This example was created based on these [instructions](https://modelcontextprotocol.io/quickstart/server). To get the MQ MCP server running, follow these steps:
 
-- The MQ MCP server uses the MQ Administrative REST API. Ensure that you have the mqweb server running as part of a full MQ for distributed installation with one or more queue managers. This doesn't have to be on your local machine
-- Ensure that you have installed Python 3.10 or higher
-- Install uv and set up your Python project
-    - (MacOS/Linux): **curl -LsSf https://astral.sh/uv/install.sh | sh**
-    - (Windows): **powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"**
-- Restart your terminal
-- Clone this repo into a working directory, e.g. **C:\work**
-- Change into the mq-mcp-server directory: **cd mq-mcp-server**
-- Install dependencies: **uv add "mcp[cli]" httpx**
-- Set environment variables for your mqweb credentials (never stored in source code):
-    - (MacOS/Linux): **export MQ_USERNAME=mqreader && export MQ_PASSWORD=mqreader**
-    - (Windows): **set MQ_USERNAME=mqreader** and **set MQ_PASSWORD=mqreader**
-- Open **mqmcpserver.py** in your editor of choice and update the **MQ_SERVERS** list:
-    - Add one entry per mqweb server. For a single server this is just the default `https://localhost:9443/ibmmq/rest/v3/admin/`
-    - For a **uniform cluster with Native HA**, add one entry per node (e.g. ports 9443–9448 for two QMs with three HA nodes each). The `dspmq` tool queries all servers in parallel; `runmqsc` tries each in turn and skips unreachable ones automatically
-    - Bear in mind that if the user is a member of the MQWebAdmin or MQWebUser roles then requests to the MQ MCP server will be able to change your MQ configuration, so you might only want to use these roles in a test environment
-- Save your changes
-- Start the MQ MCP server by running: **uv run mqmcpserver.py**
+1. **Restart your terminal** after installing `uv` to ensure it is on your PATH.
 
-By default the MQ MCP server will be listening on http://127.0.0.1:8000/mcp using the streamable HTTP protocol. You can adjust the host name and port number, or use a different protocol using the information provided [here](https://github.com/jlowin/fastmcp#running-your-server).
-Some alternatives are included, with comments, in the code.
+2. **Clone this repo** into a working directory:
+   ```bash
+   git clone https://github.com/ibm-messaging/mq-mcp-server.git
+   cd mq-mcp-server
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   uv sync
+   ```
+
+4. **Set credentials** via environment variables (passwords are never stored in source code):
+   - macOS/Linux:
+     ```bash
+     export MQ_USERNAME=mqreader
+     export MQ_PASSWORD=mqreader
+     ```
+   - Windows:
+     ```cmd
+     set MQ_USERNAME=mqreader
+     set MQ_PASSWORD=mqreader
+     ```
+
+5. **Configure mqweb servers** — open `mqmcpserver.py` and update the `MQ_SERVERS` list:
+   - **Single server:** just update the default URL to point to your mqweb host:
+     ```python
+     MQ_SERVERS = [
+         {"url": "https://mqhost:9443/ibmmq/rest/v3/admin/"},
+     ]
+     ```
+   - **Uniform cluster with Native HA:** add one entry per node. The `dspmq` tool queries all servers in parallel; `runmqsc` automatically skips unreachable nodes and tries the next one:
+     ```python
+     MQ_SERVERS = [
+         {"url": "https://mqnode01:9443/ibmmq/rest/v3/admin/"},
+         {"url": "https://mqnode02:9443/ibmmq/rest/v3/admin/"},
+         {"url": "https://mqnode03:9443/ibmmq/rest/v3/admin/"},
+         {"url": "https://mqnode04:9443/ibmmq/rest/v3/admin/"},
+         {"url": "https://mqnode05:9443/ibmmq/rest/v3/admin/"},
+         {"url": "https://mqnode06:9443/ibmmq/rest/v3/admin/"},
+     ]
+     ```
+   - Per-server credentials can be added by including `"username"` and `"password"` keys in an entry — they override the environment variables for that entry only.
+
+6. **Start the MQ MCP server:**
+   ```bash
+   uv run mqmcpserver.py
+   ```
+
+By default the MQ MCP server listens on `http://127.0.0.1:8000/mcp` using the streamable HTTP protocol.
+Transport alternatives (SSE, stdio) are described in the [Transport options](#transport-options) section below.
 
 ## Connecting the MCP server to an LLM
 
