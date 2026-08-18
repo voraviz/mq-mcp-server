@@ -16,6 +16,8 @@ import asyncio
 import httpx
 import json
 import os
+import ssl
+import sys
 
 from mcp.server.mcpserver import MCPServer
 
@@ -43,15 +45,28 @@ mcp = MCPServer("mqmcpserver")
 MQ_USERNAME = os.environ.get("MQ_USERNAME", "mqreader")
 MQ_PASSWORD = os.environ.get("MQ_PASSWORD", "mqreader")
 
+# TLS verification. Internal MQ often uses a self-signed cert — point MQ_CA_BUNDLE at that
+# cert or your internal CA (PEM) to validate against it instead of trusting blindly.
+# Unset = no verification (zero-config demo default; MITM-vulnerable, do not use in prod).
+MQ_CA_BUNDLE = os.environ.get("MQ_CA_BUNDLE")
+MQ_VERIFY = ssl.create_default_context(cafile=MQ_CA_BUNDLE) if MQ_CA_BUNDLE else False
+
+# MQ_SERVERS = [
+#     {"url": "https://localhost:9443/ibmmq/rest/v3/admin/"},
+# ]
 MQ_SERVERS = [
     {"url": "https://localhost:9443/ibmmq/rest/v3/admin/"},
+    {"url": "https://localhost:9444/ibmmq/rest/v3/admin/"},
+    {"url": "https://localhost:9445/ibmmq/rest/v3/admin/"},
+    {"url": "https://localhost:9446/ibmmq/rest/v3/admin/"},
+    {"url": "https://localhost:9447/ibmmq/rest/v3/admin/"},
+    {"url": "https://localhost:9448/ibmmq/rest/v3/admin/"},
 ]
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _dspmq_one(client: httpx.AsyncClient, server: dict) -> str:
+async def _dspmq_one(client: httpx.AsyncClient, server: dict, auth: httpx.BasicAuth) -> str:
     """Query a single mqweb server for its queue managers."""
     headers = {
         "Content-Type": "application/json",
@@ -59,28 +74,11 @@ async def _dspmq_one(client: httpx.AsyncClient, server: dict) -> str:
     }
     url = server["url"] + "qmgr/"
     try:
-        response = await client.get(url, headers=headers, timeout=30.0)
+        response = await client.get(url, headers=headers, auth=auth, timeout=30.0)
         response.raise_for_status()
         return prettify_dspmq(response.content, server["url"])
     except Exception as err:
-        print(err)
-        return f"[{server['url']}] Error: {err}\n---\n"
-
-
-async def _runmqsc_one(client: httpx.AsyncClient, server: dict, qmgr_name: str, mqsc_command: str) -> str:
-    """Run an MQSC command on a single mqweb server."""
-    headers = {
-        "Content-Type": "application/json",
-        "ibm-mq-rest-csrf-token": "a",
-    }
-    data = json.dumps({"type": "runCommand", "parameters": {"command": mqsc_command}})
-    url = server["url"] + "action/qmgr/" + qmgr_name + "/mqsc"
-    try:
-        response = await client.post(url, data=data, headers=headers, timeout=30.0)
-        response.raise_for_status()
-        return prettify_runmqsc(response.content)
-    except Exception as err:
-        print(err)
+        print(err, file=sys.stderr)
         return f"[{server['url']}] Error: {err}\n---\n"
 
 
@@ -94,12 +92,12 @@ async def dspmq() -> str:
     Queries all configured MQ servers.
     """
     tasks = []
-    async with httpx.AsyncClient(verify=False) as client:
+    async with httpx.AsyncClient(verify=MQ_VERIFY) as client:
         for server in MQ_SERVERS:
             username = server.get("username", MQ_USERNAME)
             password = server.get("password", MQ_PASSWORD)
-            client.auth = httpx.BasicAuth(username=username, password=password)
-            tasks.append(_dspmq_one(client, server))
+            auth = httpx.BasicAuth(username=username, password=password)
+            tasks.append(_dspmq_one(client, server, auth))
         results = await asyncio.gather(*tasks)
     return "".join(results)
 
@@ -118,7 +116,7 @@ async def runmqsc(qmgr_name: str, mqsc_command: str) -> str:
         username = server.get("username", MQ_USERNAME)
         password = server.get("password", MQ_PASSWORD)
         auth = httpx.BasicAuth(username=username, password=password)
-        async with httpx.AsyncClient(verify=False, auth=auth, timeout=timeout) as client:
+        async with httpx.AsyncClient(verify=MQ_VERIFY, auth=auth, timeout=timeout) as client:
             headers = {
                 "Content-Type": "application/json",
                 "ibm-mq-rest-csrf-token": "a",
@@ -133,13 +131,13 @@ async def runmqsc(qmgr_name: str, mqsc_command: str) -> str:
                 # 404 means this server doesn't host the qmgr — try the next one
                 if err.response.status_code == 404:
                     continue
-                print(err)
+                print(err, file=sys.stderr)
                 return f"Error from {server['url']}: {err}\n"
             except (httpx.ConnectError, httpx.ConnectTimeout):
                 # Server unreachable — try the next one silently
                 continue
             except Exception as err:
-                print(err)
+                print(err, file=sys.stderr)
                 return f"Error from {server['url']}: {err}\n"
     return f"Queue manager '{qmgr_name}' not found on any configured MQ server."
 
@@ -161,8 +159,14 @@ def prettify_dspmq(payload: bytes, server_url: str) -> str:
 # Deals with both z/OS and distributed queue managers
 def prettify_runmqsc(payload: bytes) -> str:
     jsonOutput = json.loads(payload.decode("utf-8"))
+    # A command-level error (e.g. bad MQSC) returns HTTP 200 with no commandResponse.
+    responses = jsonOutput.get('commandResponse')
+    if not responses:
+        reason = jsonOutput.get('overallReasonCode', 'unknown')
+        errs = "; ".join(jsonOutput.get('error', [])) or "no command response"
+        return f"\n---\n{errs} (overallReasonCode = {reason})\n---\n"
     prettifiedOutput = "\n---\n"
-    for x in jsonOutput['commandResponse']:
+    for x in responses:
         # z/OS
         if x['text'][0].startswith("CSQN205I"):
             # Remove leading and trailing messages, as they aren't needed.

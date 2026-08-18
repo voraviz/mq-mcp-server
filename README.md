@@ -5,7 +5,7 @@ You can read up on the details of MCP [here](https://modelcontextprotocol.io/int
 
 This repo contains a simple MCP server, written in Python, that exposes a subset of the [MQ Administrative REST API](https://www.ibm.com/docs/en/ibm-mq/9.4.x?topic=administering-administration-using-rest-api) as two MCP tools:
 
-- dsqmq: lists any queue managers that are local to the mqweb server, and whether they are running or not
+- dspmq: lists any queue managers that are local to the mqweb server, and whether they are running or not
 - runmqsc: runs any MQSC command against a specific queue manager. This makes use of the [plain text MQSC API](https://www.ibm.com/docs/en/ibm-mq/9.4.x?topic=adminactionqmgrqmgrnamemqsc-post-plain-text-mqsc-command) 
 
 You can use this MCP server with any LLM which has an MCP client in it, for example [IBM Bob](https://www.ibm.com/products/bob), to allow that LLM to interact with, and potentially configure, your queue managers. 
@@ -18,7 +18,7 @@ Before running the MQ MCP server, ensure you have the following:
 |---|---|
 | **IBM MQ** | A full IBM MQ for distributed installation with one or more queue managers running. The mqweb server (`strmqweb`) must be started. This does not have to be on your local machine. |
 | **mqweb user** | A user configured in the mqweb server with at least the `MQWebUser` role (read-only) or `MQWebAdmin` role (read-write). Note: `MQWebAdmin` allows full MQ configuration changes — use with care in production. |
-| **Python 3.10+** | Install from [python.org](https://www.python.org/downloads/) or via your OS package manager. |
+| **Python 3.13+** | Install from [python.org](https://www.python.org/downloads/) or via your OS package manager. |
 | **uv** | Python package manager used to run the server. |
 
 Install `uv`:
@@ -73,6 +73,25 @@ This example was created based on these [instructions](https://modelcontextproto
      ]
      ```
    - Per-server credentials can be added by including `"username"` and `"password"` keys in an entry — they override the environment variables for that entry only.
+
+   **TLS verification** (`MQ_CA_BUNDLE`) — by default the server does **not** verify the mqweb
+   certificate (fine for a local demo, but MITM-vulnerable). Internal mqweb servers commonly use a
+   self-signed cert; rather than trusting blindly, point `MQ_CA_BUNDLE` at that cert (or your
+   internal CA) in PEM form to validate against it:
+   ```bash
+   export MQ_CA_BUNDLE=/path/to/mqweb-ca.pem
+   ```
+   Grab a self-signed mqweb cert straight off the server:
+   ```bash
+   openssl s_client -connect mqhost:9443 -showcerts </dev/null 2>/dev/null \
+     | openssl x509 > mqweb-ca.pem
+   export MQ_CA_BUNDLE=$PWD/mqweb-ca.pem
+   ```
+   Notes:
+   - Verification also enforces a **hostname match** — the cert's CN/SAN must match the host in
+     `MQ_SERVERS` (use the hostname, not an IP, unless the cert has an IP SAN).
+   - If `MQ_CA_BUNDLE` points at a missing or non-cert file, the server **fails at startup** with an
+     `SSLError` — a loud misconfiguration is intentional (it never silently falls back to no verification).
 
 6. **Start the MQ MCP server:**
    ```bash
