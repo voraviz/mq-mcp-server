@@ -128,8 +128,9 @@ async def runmqsc(qmgr_name: str, mqsc_command: str) -> str:
                 response.raise_for_status()
                 return prettify_runmqsc(response.content)
             except httpx.HTTPStatusError as err:
-                # 404 means this server doesn't host the qmgr — try the next one
-                if err.response.status_code == 404:
+                # 404 = qmgr not on this server, 503 = qmgr unavailable (e.g. replica
+                # or recently failed-over node) — skip both and try the next server
+                if err.response.status_code in (404, 503):
                     continue
                 print(err, file=sys.stderr)
                 return f"Error from {server['url']}: {err}\n"
