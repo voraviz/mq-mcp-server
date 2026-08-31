@@ -42,8 +42,8 @@ mcp = MCPServer("mqmcpserver")
 # Per-server credentials can be added by including "username"/"password" keys
 # in a specific entry — they override the environment variables for that entry.
 
-MQ_USERNAME = os.environ.get("MQ_USERNAME", "mqreader")
-MQ_PASSWORD = os.environ.get("MQ_PASSWORD", "mqreader")
+MQ_USERNAME = os.environ.get("MQ_USERNAME", "admin")
+MQ_PASSWORD = os.environ.get("MQ_PASSWORD", "passw0rd")
 
 # TLS verification. Internal MQ often uses a self-signed cert — point MQ_CA_BUNDLE at that
 # cert or your internal CA (PEM) to validate against it instead of trusting blindly.
